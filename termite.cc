@@ -16,6 +16,9 @@
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
+#define EASY_MODE (1)
+//#define DEBUG (1)
+
 #include <algorithm>
 #include <array>
 #include <cstdlib>
@@ -239,6 +242,11 @@ static const std::map<int, const char *> modify_meta_table = {
     { GDK_KEY_greater,    "\033[27;14;62~" },
     { GDK_KEY_question,   "\033[27;14;63~" },
 };
+
+#if EASY_MODE
+static int is_easy_selection_mode = 1;
+static char prev_title[1024];
+#endif
 
 static gboolean modify_key_feed(GdkEventKey *event, keybind_info *info,
                                 const std::map<int, const char *>& table) {
@@ -489,6 +497,16 @@ static void update_selection(VteTerminal *vte, const select_info *select) {
 }
 
 static void enter_command_mode(VteTerminal *vte, select_info *select) {
+#if EASY_MODE
+    is_easy_selection_mode = 1;
+
+    prev_title[0] = NULL;
+    const char *const title = vte_terminal_get_window_title(vte);
+    if (title != NULL) {
+        strncpy(prev_title, title, sizeof(prev_title) - 1);
+    }
+    gtk_window_set_title(GTK_WINDOW(gtk_widget_get_toplevel(GTK_WIDGET(vte))), "<<  SELECTION MODE  >>");
+#endif
     vte_terminal_disconnect_pty_read(vte);
     select->mode = vi_mode::command;
     vte_terminal_get_cursor_position(vte, &select->origin_col, &select->origin_row);
@@ -496,6 +514,12 @@ static void enter_command_mode(VteTerminal *vte, select_info *select) {
 }
 
 static void exit_command_mode(VteTerminal *vte, select_info *select) {
+#if EASY_MODE
+    if (strlen(prev_title) > 0) {
+        gtk_window_set_title(GTK_WINDOW(gtk_widget_get_toplevel(GTK_WIDGET(vte))), prev_title);
+        prev_title[0] = NULL;
+    }
+#endif
     vte_terminal_set_cursor_position(vte, select->origin_col, select->origin_row);
     vte_terminal_connect_pty_read(vte);
     vte_terminal_unselect_all(vte);
@@ -637,12 +661,272 @@ static void move_backward(VteTerminal *vte, select_info *select, F is_word) {
         } else {
             in_word = true;
         }
+#if EASY_MODE
+        if (i == 1) {
+            cursor_col--;
+        }
+#endif
     }
+
     vte_terminal_set_cursor_position(vte, cursor_col, cursor_row);
     update_selection(vte, select);
 
     g_free(codepoints);
 }
+
+#if EASY_MODE
+
+static int is_space_char(char c) {
+    if (c == ' ' || c == '\t') {
+        return 1;
+    }
+    return 0;
+}
+
+static void easy_get_backward_token(VteTerminal *vte, select_info *select, long *start_idx, long *end_idx, int find_initial_delim) {
+
+    *start_idx = -1;
+    *end_idx = -1;
+
+    long cursor_col, cursor_row;
+    vte_terminal_get_cursor_position(vte, &cursor_col, &cursor_row);
+
+    auto content = get_text_range(vte, cursor_row, 0, cursor_row, cursor_col);
+    if (!content) {
+        return;
+    }
+
+    long length;
+    gunichar *codepoints = g_utf8_to_ucs4(content.get(), -1, nullptr, &length, nullptr);
+    if (!codepoints) {
+        return;
+    }
+#if DEBUG
+    printf("easy_get_backward_token(): string length=%d\n", length);
+#endif
+
+    long i;
+    if (find_initial_delim == 1 && length > cursor_col) {
+        for (i = length - 2; i >= 0; i--) {
+#if DEBUG
+            printf("  [%d] 0x%02x %c\n", i, codepoints[i], codepoints[i]);
+#endif
+            if (is_space_char(codepoints[i])) {
+                break;
+            }
+        }
+    } else {
+        i = length - 2;
+    }
+#if DEBUG
+    printf("easy_get_backward_token(): edge idx=%d\n", i);
+#endif
+    for (; i >= 0; i--) {
+#if DEBUG
+        printf("..[%d] 0x%02x %c\n", i, codepoints[i], codepoints[i]);
+#endif
+        if (is_space_char(codepoints[i])) {
+            if (*end_idx != -1) {
+                *start_idx = i + 1;
+                break;
+            }
+        } else {
+            if (*end_idx == -1) {
+                *end_idx = i;
+            }
+        }
+    }
+    if (*end_idx != -1 && *start_idx == -1) {
+        *start_idx = 0;
+    }
+
+    g_free(codepoints);
+}
+
+static void easy_move_backward(VteTerminal *vte, select_info *select) {
+
+    long start_idx, end_idx;
+    long cursor_col, cursor_row;
+    vte_terminal_get_cursor_position(vte, &cursor_col, &cursor_row);
+
+    easy_get_backward_token(vte, select, &start_idx, &end_idx, 1);
+#if DEBUG
+    printf("easy_move_backward() start_idx=%d, end_idx\n", (int) start_idx, (int) end_idx);
+#endif
+    if (start_idx != -1) {
+        cursor_col = start_idx;
+    }
+
+    vte_terminal_set_cursor_position(vte, cursor_col, cursor_row);
+    update_selection(vte, select);
+}
+
+static void easy_get_current_token(VteTerminal *vte, select_info *select, long *start_idx, long *end_idx) {
+
+    *start_idx = -1;
+    *end_idx = -1;
+
+    long cursor_col, cursor_row;
+    vte_terminal_get_cursor_position(vte, &cursor_col, &cursor_row);
+
+    auto content = get_text_range(vte, cursor_row, 0, cursor_row, cursor_col);
+    if (!content) {
+        return;
+    }
+
+    long length;
+    gunichar *codepoints = g_utf8_to_ucs4(content.get(), -1, nullptr, &length, nullptr);
+    if (!codepoints) {
+        return;
+    }
+#if DEBUG
+    printf("easy_get_current_token(): string length=%d\n", length);
+#endif
+
+    if (length < cursor_col) {
+        g_free(codepoints);
+        return;
+    }
+    if (is_space_char(codepoints[length - 2])) {
+        g_free(codepoints);
+        return;
+    }
+
+    for (long i = length - 2; i >= 0; i--) {
+#if DEBUG
+        printf("..[%d] 0x%02x %c\n", i, codepoints[i], codepoints[i]);
+#endif
+        if (is_space_char(codepoints[i])) {
+            *start_idx = i + 1;
+            break;
+        }
+        if (i == 0) {
+            *start_idx = 0;
+            break;
+        }
+    }
+
+    //TODO: set up end_idx
+    g_free(codepoints);
+}
+
+static void easy_get_forward_token(VteTerminal *vte, select_info *select, long *start_idx, long *end_idx, int find_initial_delim) {
+    *start_idx = -1;
+    *end_idx = -1;
+
+    long cursor_col, cursor_row;
+    vte_terminal_get_cursor_position(vte, &cursor_col, &cursor_row);
+
+    const long end_col = vte_terminal_get_column_count(vte) - 1;
+
+    auto content = get_text_range(vte, cursor_row, cursor_col, cursor_row, end_col);
+    if (!content) {
+        return;
+    }
+
+    long length;
+    gunichar *codepoints = g_utf8_to_ucs4(content.get(), -1, nullptr, &length, nullptr);
+    if (!codepoints) {
+        return;
+    }
+
+    // prevent going past the end (get_text_range adds a \n)
+    if (codepoints[length - 1] == '\n') {
+        length--;
+    }
+
+#if DEBUG
+    printf("easy_get_forward_token(): string length=%d\n", length);
+#endif
+
+    long i = 0;
+    if (find_initial_delim) {
+        for (i = 0; i < length; i++) {
+            if (is_space_char(codepoints[i])) {
+                break;
+            }
+        }
+    }
+#if DEBUG
+    printf("easy_get_forward_token(): edge idx=%d\n", i);
+#endif
+    for (; i < length; i++) {
+#if DEBUG
+        printf("..[%d] 0x%02x %c\n", i, codepoints[i], codepoints[i]);
+#endif
+        if (is_space_char(codepoints[i])) {
+            if (*start_idx != -1) {
+                *end_idx = i;
+                break;
+            }
+        } else {
+            if (*start_idx == -1) {
+                *start_idx = i;
+            }
+        }
+    }
+
+    g_free(codepoints);
+}
+
+static void easy_move_forward(VteTerminal *vte, select_info *select) {
+    long start_idx, end_idx;
+
+    long cursor_col, cursor_row;
+    vte_terminal_get_cursor_position(vte, &cursor_col, &cursor_row);
+
+    easy_get_forward_token(vte, select, &start_idx, &end_idx, 1);
+#if DEBUG
+    printf("easy_move_forward() start_idx=%d, end_idx\n", (int) start_idx, (int) end_idx);
+#endif
+    if (start_idx != -1) {
+        cursor_col += start_idx;
+    }
+
+    vte_terminal_set_cursor_position(vte, cursor_col, cursor_row);
+    update_selection(vte, select);
+}
+
+static void easy_move_heuristic(VteTerminal *vte, select_info *select) {
+    long cursor_col, cursor_row;
+    vte_terminal_get_cursor_position(vte, &cursor_col, &cursor_row);
+
+    long start_idx, end_idx;
+    easy_get_current_token(vte, select, &start_idx, &end_idx);
+#if DEBUG
+    printf("easy_move_heuristic() current start_idx=%d, end_idx\n", (int) start_idx, (int) end_idx);
+#endif
+    if (start_idx != -1) {
+        cursor_col = start_idx;
+    } else {
+        easy_get_forward_token(vte, select, &start_idx, &end_idx, 0);
+#if DEBUG
+        printf("easy_move_heuristic() forward start_idx=%d, end_idx\n", (int) start_idx, (int) end_idx);
+#endif
+        if (start_idx != -1) {
+            cursor_col += start_idx;
+        } else {
+            easy_get_backward_token(vte, select, &start_idx, &end_idx, 0);
+#if DEBUG
+            printf("easy_move_heuristic() backward start_idx=%d, end_idx\n", (int) start_idx, (int) end_idx);
+#endif
+            if (start_idx != -1) {
+                cursor_col = start_idx;
+            } else {
+                cursor_col = 0;
+            }
+        }
+    }
+#if DEBUG
+    printf("easy_move_heuristic() final cursor_col\n", (int) cursor_col);
+#endif
+
+    vte_terminal_set_cursor_position(vte, cursor_col, cursor_row);
+    update_selection(vte, select);
+}
+
+#endif
+
 
 static void move_backward_word(VteTerminal *vte, select_info *select) {
     move_backward(vte, select, is_word_char);
@@ -883,18 +1167,38 @@ gboolean key_press_cb(VteTerminal *vte, GdkEventKey *event, keybind_info *info) 
                 break;
             case GDK_KEY_Left:
             case GDK_KEY_h:
+#if EASY_MODE
+                if (is_easy_selection_mode) {
+                    easy_move_backward(vte, &info->select);
+                } else
+#endif
                 move(vte, &info->select, -1, 0);
                 break;
             case GDK_KEY_Down:
             case GDK_KEY_j:
                 move(vte, &info->select, 0, 1);
+#if EASY_MODE
+                if (is_easy_selection_mode) {
+                    easy_move_heuristic(vte, &info->select);
+                }
+#endif
                 break;
             case GDK_KEY_Up:
             case GDK_KEY_k:
                 move(vte, &info->select, 0, -1);
+#if EASY_MODE
+                if (is_easy_selection_mode) {
+                    easy_move_heuristic(vte, &info->select);
+                }
+#endif
                 break;
             case GDK_KEY_Right:
             case GDK_KEY_l:
+#if EASY_MODE
+                if (is_easy_selection_mode) {
+                    easy_move_forward(vte, &info->select);
+                } else
+#endif
                 move(vte, &info->select, 1, 0);
                 break;
             case GDK_KEY_b:
@@ -949,10 +1253,28 @@ gboolean key_press_cb(VteTerminal *vte, GdkEventKey *event, keybind_info *info) 
                 toggle_visual(vte, &info->select, vi_mode::visual_line);
                 break;
             case GDK_KEY_y:
+#if EASY_MODE
+                if (is_easy_selection_mode) {
+                    if (info->select.mode != vi_mode::visual) {
+                        toggle_visual(vte, &info->select, vi_mode::visual);
+                    }
+                    move_forward_end_word(vte, &info->select);
+                    toggle_visual(vte, &info->select, vi_mode::visual);
+                    move_backward_word(vte, &info->select);
+                }
+#endif
 #if VTE_CHECK_VERSION(0, 50, 0)
                 vte_terminal_copy_clipboard_format(vte, VTE_FORMAT_TEXT);
 #else
                 vte_terminal_copy_clipboard(vte);
+#endif
+#if EASY_MODE
+                if (is_easy_selection_mode) {
+                    exit_command_mode(vte, &info->select);
+                    gtk_widget_hide(info->panel.da);
+                    gtk_widget_hide(info->panel.entry);
+                    info->panel.url_list.clear();
+                }
 #endif
                 break;
             case GDK_KEY_slash:
@@ -979,6 +1301,26 @@ gboolean key_press_cb(VteTerminal *vte, GdkEventKey *event, keybind_info *info) 
                 open_selection(info->config.browser, vte);
                 break;
             case GDK_KEY_Return:
+#if EASY_MODE
+                if (is_easy_selection_mode) {
+                    if (info->select.mode != vi_mode::visual) {
+                        toggle_visual(vte, &info->select, vi_mode::visual);
+                    }
+                    move_forward_end_word(vte, &info->select);
+                    toggle_visual(vte, &info->select, vi_mode::visual);
+                    move_backward_word(vte, &info->select);
+#if VTE_CHECK_VERSION(0, 50, 0)
+                    vte_terminal_copy_clipboard_format(vte, VTE_FORMAT_TEXT);
+#else
+                    vte_terminal_copy_clipboard(vte);
+#endif
+                    exit_command_mode(vte, &info->select);
+                    gtk_widget_hide(info->panel.da);
+                    gtk_widget_hide(info->panel.entry);
+                    info->panel.url_list.clear();
+                    break;
+                }
+#endif
                 open_selection(info->config.browser, vte);
                 exit_command_mode(vte, &info->select);
                 break;
@@ -989,6 +1331,15 @@ gboolean key_press_cb(VteTerminal *vte, GdkEventKey *event, keybind_info *info) 
                 gtk_widget_show(info->panel.da);
                 overlay_show(&info->panel, overlay_mode::urlselect, nullptr);
                 break;
+#if EASY_MODE
+            case GDK_KEY_space:
+                if (is_easy_selection_mode) {
+                    is_easy_selection_mode = 0;
+                } else {
+                    is_easy_selection_mode = 1;
+                }
+                break;
+#endif
         }
         return TRUE;
     }
@@ -1054,6 +1405,11 @@ gboolean key_press_cb(VteTerminal *vte, GdkEventKey *event, keybind_info *info) 
             case GDK_KEY_equal:
                 reset_font_scale(vte, info->config.font_scale);
                 return TRUE;
+#if EASY_MODE
+            case GDK_KEY_j:
+                enter_command_mode(vte, &info->select);
+                return TRUE;
+#endif
             default:
                 if (modify_key_feed(event, info, modify_table))
                     return TRUE;
