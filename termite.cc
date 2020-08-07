@@ -244,6 +244,10 @@ static const std::map<int, const char *> modify_meta_table = {
 };
 
 #if EASY_MODE
+
+#define SELECTION_MODE_STR ("<<  SELECTION MODE  >>")
+#define EASY_SELECTION_MODE_STR ("<<  EASY SELECTION MODE  >>")
+
 static int is_easy_selection_mode = 1;
 static char prev_title[1024];
 #endif
@@ -505,7 +509,11 @@ static void enter_command_mode(VteTerminal *vte, select_info *select) {
     if (title != NULL) {
         strncpy(prev_title, title, sizeof(prev_title) - 1);
     }
-    gtk_window_set_title(GTK_WINDOW(gtk_widget_get_toplevel(GTK_WIDGET(vte))), "<<  SELECTION MODE  >>");
+    if (is_easy_selection_mode) {
+        gtk_window_set_title(GTK_WINDOW(gtk_widget_get_toplevel(GTK_WIDGET(vte))), EASY_SELECTION_MODE_STR);
+    } else {
+        gtk_window_set_title(GTK_WINDOW(gtk_widget_get_toplevel(GTK_WIDGET(vte))), SELECTION_MODE_STR);
+    }
 #endif
     vte_terminal_disconnect_pty_read(vte);
     select->mode = vi_mode::command;
@@ -1335,8 +1343,10 @@ gboolean key_press_cb(VteTerminal *vte, GdkEventKey *event, keybind_info *info) 
             case GDK_KEY_space:
                 if (is_easy_selection_mode) {
                     is_easy_selection_mode = 0;
+                    gtk_window_set_title(GTK_WINDOW(gtk_widget_get_toplevel(GTK_WIDGET(vte))), SELECTION_MODE_STR);
                 } else {
                     is_easy_selection_mode = 1;
+                    gtk_window_set_title(GTK_WINDOW(gtk_widget_get_toplevel(GTK_WIDGET(vte))), EASY_SELECTION_MODE_STR);
                 }
                 break;
 #endif
