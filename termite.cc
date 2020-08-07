@@ -17,7 +17,6 @@
  */
 
 #define EASY_MODE (1)
-//#define DEBUG (1)
 
 #include <algorithm>
 #include <array>
@@ -243,14 +242,6 @@ static const std::map<int, const char *> modify_meta_table = {
     { GDK_KEY_question,   "\033[27;14;63~" },
 };
 
-#if EASY_MODE
-
-#define SELECTION_MODE_STR ("<<  SELECTION MODE  >>")
-#define EASY_SELECTION_MODE_STR ("<<  EASY SELECTION MODE  >>")
-
-static int is_easy_selection_mode = 1;
-static char prev_title[1024];
-#endif
 
 static gboolean modify_key_feed(GdkEventKey *event, keybind_info *info,
                                 const std::map<int, const char *>& table) {
@@ -500,21 +491,33 @@ static void update_selection(VteTerminal *vte, const select_info *select) {
     vte_terminal_copy_primary(vte);
 }
 
+#if EASY_MODE
+//#define DEBUG (1)
+
+#define SELECTION_MODE_STR      ("[   SELECTION MODE   ]")
+#define EASY_SELECTION_MODE_STR ("[   EASY SELECTION MODE   ]")
+
+static int is_easy_selection_mode = 1;
+static char prev_title[1024];
+#endif
+
 static void enter_command_mode(VteTerminal *vte, select_info *select) {
 #if EASY_MODE
+    // Default is ON
     is_easy_selection_mode = 1;
 
     prev_title[0] = NULL;
     const char *const title = vte_terminal_get_window_title(vte);
     if (title != NULL) {
         strncpy(prev_title, title, sizeof(prev_title) - 1);
-    }
-    if (is_easy_selection_mode) {
-        gtk_window_set_title(GTK_WINDOW(gtk_widget_get_toplevel(GTK_WIDGET(vte))), EASY_SELECTION_MODE_STR);
-    } else {
-        gtk_window_set_title(GTK_WINDOW(gtk_widget_get_toplevel(GTK_WIDGET(vte))), SELECTION_MODE_STR);
+        if (is_easy_selection_mode) {
+            gtk_window_set_title(GTK_WINDOW(gtk_widget_get_toplevel(GTK_WIDGET(vte))), EASY_SELECTION_MODE_STR);
+        } else {
+            gtk_window_set_title(GTK_WINDOW(gtk_widget_get_toplevel(GTK_WIDGET(vte))), SELECTION_MODE_STR);
+        }
     }
 #endif
+
     vte_terminal_disconnect_pty_read(vte);
     select->mode = vi_mode::command;
     vte_terminal_get_cursor_position(vte, &select->origin_col, &select->origin_row);
@@ -528,6 +531,7 @@ static void exit_command_mode(VteTerminal *vte, select_info *select) {
         prev_title[0] = NULL;
     }
 #endif
+
     vte_terminal_set_cursor_position(vte, select->origin_col, select->origin_row);
     vte_terminal_connect_pty_read(vte);
     vte_terminal_unselect_all(vte);
@@ -692,7 +696,6 @@ static int is_space_char(char c) {
 }
 
 static void easy_get_backward_token(VteTerminal *vte, select_info *select, long *start_idx, long *end_idx, int find_initial_delim) {
-
     *start_idx = -1;
     *end_idx = -1;
 
@@ -747,16 +750,14 @@ static void easy_get_backward_token(VteTerminal *vte, select_info *select, long 
     if (*end_idx != -1 && *start_idx == -1) {
         *start_idx = 0;
     }
-
     g_free(codepoints);
 }
 
 static void easy_move_backward(VteTerminal *vte, select_info *select) {
-
-    long start_idx, end_idx;
     long cursor_col, cursor_row;
     vte_terminal_get_cursor_position(vte, &cursor_col, &cursor_row);
 
+    long start_idx, end_idx;
     easy_get_backward_token(vte, select, &start_idx, &end_idx, 1);
 #if DEBUG
     printf("easy_move_backward() start_idx=%d, end_idx\n", (int) start_idx, (int) end_idx);
@@ -770,7 +771,6 @@ static void easy_move_backward(VteTerminal *vte, select_info *select) {
 }
 
 static void easy_get_current_token(VteTerminal *vte, select_info *select, long *start_idx, long *end_idx) {
-
     *start_idx = -1;
     *end_idx = -1;
 
@@ -826,7 +826,6 @@ static void easy_get_forward_token(VteTerminal *vte, select_info *select, long *
     vte_terminal_get_cursor_position(vte, &cursor_col, &cursor_row);
 
     const long end_col = vte_terminal_get_column_count(vte) - 1;
-
     auto content = get_text_range(vte, cursor_row, cursor_col, cursor_row, end_col);
     if (!content) {
         return;
@@ -878,11 +877,10 @@ static void easy_get_forward_token(VteTerminal *vte, select_info *select, long *
 }
 
 static void easy_move_forward(VteTerminal *vte, select_info *select) {
-    long start_idx, end_idx;
-
     long cursor_col, cursor_row;
     vte_terminal_get_cursor_position(vte, &cursor_col, &cursor_row);
 
+    long start_idx, end_idx;
     easy_get_forward_token(vte, select, &start_idx, &end_idx, 1);
 #if DEBUG
     printf("easy_move_forward() start_idx=%d, end_idx\n", (int) start_idx, (int) end_idx);
@@ -2162,6 +2160,10 @@ int main(int argc, char **argv) {
             window_title_cb(vte, &info.config.dynamic_title);
         }
     }
+
+#if EASY_MODE
+    prev_title[0] = NULL;
+#endif
 
     if (icon) {
         gtk_window_set_icon_name(GTK_WINDOW(window), icon);
