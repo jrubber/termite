@@ -58,6 +58,8 @@ using namespace std::placeholders;
 #define TERMINAL_SCALE_MINIMUM     (TERMINAL_SCALE_XXXXX_SMALL/1.2)
 #define TERMINAL_SCALE_MAXIMUM     (TERMINAL_SCALE_XXXXX_LARGE*1.2)
 
+static void update_scroll(VteTerminal *vte);
+
 static const std::vector<double> zoom_factors = {
     TERMINAL_SCALE_MINIMUM,
     TERMINAL_SCALE_XXXXX_SMALL,
@@ -516,6 +518,7 @@ static void enter_command_mode(VteTerminal *vte, select_info *select) {
             gtk_window_set_title(GTK_WINDOW(gtk_widget_get_toplevel(GTK_WIDGET(vte))), SELECTION_MODE_STR);
         }
     }
+
 #endif
 
     vte_terminal_disconnect_pty_read(vte);
@@ -533,6 +536,9 @@ static void exit_command_mode(VteTerminal *vte, select_info *select) {
 #endif
 
     vte_terminal_set_cursor_position(vte, select->origin_col, select->origin_row);
+#if EASY_MODE
+    update_scroll(vte);
+#endif
     vte_terminal_connect_pty_read(vte);
     vte_terminal_unselect_all(vte);
     select->mode = vi_mode::insert;
@@ -1264,8 +1270,6 @@ gboolean key_press_cb(VteTerminal *vte, GdkEventKey *event, keybind_info *info) 
                     if (info->select.mode != vi_mode::visual) {
                         toggle_visual(vte, &info->select, vi_mode::visual);
                         move_forward_end_word(vte, &info->select);
-                        //toggle_visual(vte, &info->select, vi_mode::visual);
-                        //move_backward_word(vte, &info->select);
                     }
                 }
 #endif
@@ -1312,8 +1316,6 @@ gboolean key_press_cb(VteTerminal *vte, GdkEventKey *event, keybind_info *info) 
                     if (info->select.mode != vi_mode::visual) {
                         toggle_visual(vte, &info->select, vi_mode::visual);
                         move_forward_end_word(vte, &info->select);
-                        //toggle_visual(vte, &info->select, vi_mode::visual);
-                        //move_backward_word(vte, &info->select);
                     }
 #if VTE_CHECK_VERSION(0, 50, 0)
                     vte_terminal_copy_clipboard_format(vte, VTE_FORMAT_TEXT);
