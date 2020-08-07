@@ -1257,10 +1257,10 @@ gboolean key_press_cb(VteTerminal *vte, GdkEventKey *event, keybind_info *info) 
                 if (is_easy_selection_mode) {
                     if (info->select.mode != vi_mode::visual) {
                         toggle_visual(vte, &info->select, vi_mode::visual);
+                        move_forward_end_word(vte, &info->select);
+                        //toggle_visual(vte, &info->select, vi_mode::visual);
+                        //move_backward_word(vte, &info->select);
                     }
-                    move_forward_end_word(vte, &info->select);
-                    toggle_visual(vte, &info->select, vi_mode::visual);
-                    move_backward_word(vte, &info->select);
                 }
 #endif
 #if VTE_CHECK_VERSION(0, 50, 0)
@@ -1305,10 +1305,10 @@ gboolean key_press_cb(VteTerminal *vte, GdkEventKey *event, keybind_info *info) 
                 if (is_easy_selection_mode) {
                     if (info->select.mode != vi_mode::visual) {
                         toggle_visual(vte, &info->select, vi_mode::visual);
+                        move_forward_end_word(vte, &info->select);
+                        //toggle_visual(vte, &info->select, vi_mode::visual);
+                        //move_backward_word(vte, &info->select);
                     }
-                    move_forward_end_word(vte, &info->select);
-                    toggle_visual(vte, &info->select, vi_mode::visual);
-                    move_backward_word(vte, &info->select);
 #if VTE_CHECK_VERSION(0, 50, 0)
                     vte_terminal_copy_clipboard_format(vte, VTE_FORMAT_TEXT);
 #else
