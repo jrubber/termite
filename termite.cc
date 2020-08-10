@@ -776,9 +776,95 @@ static void easy_move_backward(VteTerminal *vte, select_info *select) {
     update_selection(vte, select);
 }
 
-static void easy_get_current_token(VteTerminal *vte, select_info *select, long *start_idx, long *end_idx) {
-    *start_idx = -1;
+static void easy_get_current_token_end(VteTerminal *vte, select_info *select, long *end_idx) {
     *end_idx = -1;
+
+    long cursor_col, cursor_row;
+    vte_terminal_get_cursor_position(vte, &cursor_col, &cursor_row);
+
+    const long end_col = vte_terminal_get_column_count(vte) - 1;
+    auto content = get_text_range(vte, cursor_row, cursor_col, cursor_row, end_col);
+    if (!content) {
+        return;
+    }
+
+    long length;
+    gunichar *codepoints = g_utf8_to_ucs4(content.get(), -1, nullptr, &length, nullptr);
+    if (!codepoints) {
+        return;
+    }
+
+    // prevent going past the end (get_text_range adds a \n)
+    if (codepoints[length - 1] == '\n') {
+        length--;
+    }
+
+#if DEBUG
+    printf("easy_get_current_token_end(): string length=%d\n", length);
+#endif
+
+    if (length <= 0) {
+        g_free(codepoints);
+        return;
+    }
+
+    char first_char = codepoints[0];
+    char match_char = ' ';
+    if (first_char == '\'' || first_char == '"') {
+        match_char = first_char;
+    } 
+
+#if DEBUG
+    printf("easy_get_current_token_end(): match_char = '%c'\n", match_char);
+#endif
+
+    long i = 0;
+    for (i = 1; i < length; i++) {
+#if DEBUG
+        printf("..[%d] 0x%02x %c\n", i, codepoints[i], codepoints[i]);
+#endif
+        if (match_char == ' ') {
+            if (is_space_char(codepoints[i])) {
+                *end_idx = i - 1;
+                break;
+            }
+        } else {
+            if (codepoints[i] == match_char) {
+                *end_idx = i;
+                break;
+            }
+        }
+    }
+
+    if (*end_idx == -1) {
+        *end_idx = length - 1;
+    }
+
+    g_free(codepoints);
+}
+
+static long easy_move_token_end(VteTerminal *vte, select_info *select) {
+    long cursor_col, cursor_row;
+    vte_terminal_get_cursor_position(vte, &cursor_col, &cursor_row);
+
+    long end_idx;
+    easy_get_current_token_end(vte, select, &end_idx);
+#if DEBUG
+    printf("easy_move_token_end() end_idx\n", (int) end_idx);
+#endif
+    if (end_idx != -1) {
+        cursor_col += end_idx;
+    }
+
+    vte_terminal_set_cursor_position(vte, cursor_col, cursor_row);
+    update_selection(vte, select);
+
+    return end_idx;
+}
+
+
+static void easy_get_current_token_start(VteTerminal *vte, select_info *select, long *start_idx) {
+    *start_idx = -1;
 
     long cursor_col, cursor_row;
     vte_terminal_get_cursor_position(vte, &cursor_col, &cursor_row);
@@ -794,7 +880,7 @@ static void easy_get_current_token(VteTerminal *vte, select_info *select, long *
         return;
     }
 #if DEBUG
-    printf("easy_get_current_token(): string length=%d\n", length);
+    printf("easy_get_current_token_start(): string length=%d\n", length);
 #endif
 
     if (length < cursor_col) {
@@ -820,7 +906,6 @@ static void easy_get_current_token(VteTerminal *vte, select_info *select, long *
         }
     }
 
-    //TODO: set up end_idx
     g_free(codepoints);
 }
 
@@ -904,7 +989,7 @@ static void easy_move_heuristic(VteTerminal *vte, select_info *select) {
     vte_terminal_get_cursor_position(vte, &cursor_col, &cursor_row);
 
     long start_idx, end_idx;
-    easy_get_current_token(vte, select, &start_idx, &end_idx);
+    easy_get_current_token_start(vte, select, &start_idx);
 #if DEBUG
     printf("easy_move_heuristic() current start_idx=%d, end_idx\n", (int) start_idx, (int) end_idx);
 #endif
@@ -1269,7 +1354,7 @@ gboolean key_press_cb(VteTerminal *vte, GdkEventKey *event, keybind_info *info) 
                 if (is_easy_selection_mode) {
                     if (info->select.mode != vi_mode::visual) {
                         toggle_visual(vte, &info->select, vi_mode::visual);
-                        move_forward_end_word(vte, &info->select);
+                        easy_move_token_end(vte, &info->select);
                     }
                 }
 #endif
@@ -1315,7 +1400,7 @@ gboolean key_press_cb(VteTerminal *vte, GdkEventKey *event, keybind_info *info) 
                 if (is_easy_selection_mode) {
                     if (info->select.mode != vi_mode::visual) {
                         toggle_visual(vte, &info->select, vi_mode::visual);
-                        move_forward_end_word(vte, &info->select);
+                        easy_move_token_end(vte, &info->select);
                     }
 #if VTE_CHECK_VERSION(0, 50, 0)
                     vte_terminal_copy_clipboard_format(vte, VTE_FORMAT_TEXT);
