@@ -46,6 +46,11 @@
 #include "util/maybe.hh"
 #include "util/memory.hh"
 
+#if EASY_MODE
+#include <sys/stat.h>
+#include <sys/types.h>
+#endif
+
 using namespace std::placeholders;
 
 /* Allow scales a bit smaller and a bit larger than the usual pango ranges */
@@ -701,6 +706,15 @@ static int is_space_char(char c) {
     return 0;
 }
 
+static char termite_uuid[256];
+
+static int easy_get_uuid() {
+    //TODO: Should use uuid API
+    time_t t;
+    srand((unsigned) time(&t));
+    return rand();
+}
+
 static void easy_get_backward_token(VteTerminal *vte, select_info *select, long *start_idx, long *end_idx, int find_initial_delim) {
     *start_idx = -1;
     *end_idx = -1;
@@ -1022,6 +1036,20 @@ static void easy_move_heuristic(VteTerminal *vte, select_info *select) {
     update_selection(vte, select);
 }
 
+static void easy_dump_contents(VteTerminal *vte) {
+    char filename[256];
+    sprintf(filename, "/tmp/termite/%s.txt", termite_uuid);
+
+    mkdir("/tmp/termite", 0777);
+    unlink(filename);
+
+    GFile* file = g_file_new_for_path(filename);
+    GFileOutputStream* stream = g_file_replace(file, NULL, FALSE, G_FILE_CREATE_REPLACE_DESTINATION, NULL, NULL);
+    vte_terminal_write_contents_sync (vte, (GOutputStream*) stream, VTE_WRITE_DEFAULT, NULL, NULL);
+    g_object_unref(stream);
+    g_object_unref(file);
+}
+
 #endif
 
 
@@ -1241,6 +1269,15 @@ gboolean key_press_cb(VteTerminal *vte, GdkEventKey *event, keybind_info *info) 
                 case GDK_KEY_f:
                     move(vte, &info->select, 0, vte_terminal_get_row_count(vte) - 1);
                     break;
+#if EASY_MODE
+                case GDK_KEY_BackSpace:
+                    easy_dump_contents(vte);
+                    exit_command_mode(vte, &info->select);
+                    gtk_widget_hide(info->panel.da);
+                    gtk_widget_hide(info->panel.entry);
+                    info->panel.url_list.clear();
+                    break;
+#endif
             }
             return TRUE;
         }
@@ -2285,6 +2322,10 @@ int main(int argc, char **argv) {
 #endif
 
     env = g_environ_setenv(env, "TERM", term, TRUE);
+#if EASY_MODE
+    sprintf(termite_uuid, "%d", easy_get_uuid());
+    env = g_environ_setenv(env, "TERMITE_UUID", termite_uuid, TRUE);
+#endif
 
     GPid child_pid;
     if (vte_terminal_spawn_sync(vte, VTE_PTY_DEFAULT, nullptr, command_argv, env,
