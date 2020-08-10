@@ -1352,7 +1352,9 @@ gboolean key_press_cb(VteTerminal *vte, GdkEventKey *event, keybind_info *info) 
             case GDK_KEY_y:
 #if EASY_MODE
                 if (is_easy_selection_mode) {
-                    if (info->select.mode != vi_mode::visual) {
+                    if (info->select.mode != vi_mode::visual && 
+                            info->select.mode != vi_mode::visual_line &&
+                            info->select.mode != vi_mode::visual_block) {
                         toggle_visual(vte, &info->select, vi_mode::visual);
                         easy_move_token_end(vte, &info->select);
                     }
@@ -1398,7 +1400,9 @@ gboolean key_press_cb(VteTerminal *vte, GdkEventKey *event, keybind_info *info) 
             case GDK_KEY_Return:
 #if EASY_MODE
                 if (is_easy_selection_mode) {
-                    if (info->select.mode != vi_mode::visual) {
+                    if (info->select.mode != vi_mode::visual && 
+                            info->select.mode != vi_mode::visual_line &&
+                            info->select.mode != vi_mode::visual_block) {
                         toggle_visual(vte, &info->select, vi_mode::visual);
                         easy_move_token_end(vte, &info->select);
                     }
