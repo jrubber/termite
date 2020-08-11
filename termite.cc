@@ -708,7 +708,7 @@ static int is_space_char(char c) {
 
 static char termite_uuid[256];
 
-static int easy_get_uuid() {
+static int get_termite_uuid() {
     //TODO: Should use uuid API
     time_t t;
     srand((unsigned) time(&t));
@@ -1036,7 +1036,19 @@ static void easy_move_heuristic(VteTerminal *vte, select_info *select) {
     update_selection(vte, select);
 }
 
-static void easy_dump_contents(VteTerminal *vte) {
+static void launch_gvim(char *filename) {
+    char *argv[4] = {"/usr/bin/gvim", "+normal G", filename, nullptr};
+    GError *error = nullptr;
+
+    GPid child_pid;
+    if (!g_spawn_async(nullptr, argv, nullptr, G_SPAWN_SEARCH_PATH,
+                       nullptr, nullptr, &child_pid, &error)) {
+        g_error_free(error);
+    }
+    g_spawn_close_pid(child_pid);
+}
+
+static void launch_vim_with_contents(VteTerminal *vte) {
     char filename[256];
     sprintf(filename, "/tmp/termite/%s.txt", termite_uuid);
 
@@ -1044,10 +1056,12 @@ static void easy_dump_contents(VteTerminal *vte) {
     unlink(filename);
 
     GFile* file = g_file_new_for_path(filename);
-    GFileOutputStream* stream = g_file_replace(file, NULL, FALSE, G_FILE_CREATE_REPLACE_DESTINATION, NULL, NULL);
-    vte_terminal_write_contents_sync (vte, (GOutputStream*) stream, VTE_WRITE_DEFAULT, NULL, NULL);
+    GFileOutputStream* stream = g_file_replace(file, NULL, FALSE, G_FILE_CREATE_NONE, NULL, NULL);
+    vte_terminal_write_contents_sync(vte, (GOutputStream*) stream, VTE_WRITE_DEFAULT, NULL, NULL);
     g_object_unref(stream);
     g_object_unref(file);
+
+    launch_gvim(filename);
 }
 
 #endif
@@ -1269,15 +1283,6 @@ gboolean key_press_cb(VteTerminal *vte, GdkEventKey *event, keybind_info *info) 
                 case GDK_KEY_f:
                     move(vte, &info->select, 0, vte_terminal_get_row_count(vte) - 1);
                     break;
-#if EASY_MODE
-                case GDK_KEY_BackSpace:
-                    easy_dump_contents(vte);
-                    exit_command_mode(vte, &info->select);
-                    gtk_widget_hide(info->panel.da);
-                    gtk_widget_hide(info->panel.entry);
-                    info->panel.url_list.clear();
-                    break;
-#endif
             }
             return TRUE;
         }
@@ -1291,6 +1296,15 @@ gboolean key_press_cb(VteTerminal *vte, GdkEventKey *event, keybind_info *info) 
                     return TRUE;
             }
         }
+#if EASY_MODE
+        if (modifiers == (GDK_CONTROL_MASK|GDK_SHIFT_MASK)) {
+            switch (event->keyval) {
+                case GDK_KEY_BackSpace:
+                    launch_vim_with_contents(vte);
+                    return TRUE;
+            }
+        }
+#endif
         switch (event->keyval) {
             case GDK_KEY_Escape:
             case GDK_KEY_q:
@@ -1517,6 +1531,14 @@ gboolean key_press_cb(VteTerminal *vte, GdkEventKey *event, keybind_info *info) 
             case GDK_KEY_l:
                 vte_terminal_reset(vte, TRUE, TRUE);
                 return TRUE;
+#if EASY_MODE
+            case GDK_KEY_j:
+                enter_command_mode(vte, &info->select);
+                return TRUE;
+            case GDK_KEY_BackSpace:
+                launch_vim_with_contents(vte);
+                return TRUE;
+#endif
             default:
                 if (modify_key_feed(event, info, modify_table))
                     return TRUE;
@@ -1541,11 +1563,6 @@ gboolean key_press_cb(VteTerminal *vte, GdkEventKey *event, keybind_info *info) 
             case GDK_KEY_equal:
                 reset_font_scale(vte, info->config.font_scale);
                 return TRUE;
-#if EASY_MODE
-            case GDK_KEY_j:
-                enter_command_mode(vte, &info->select);
-                return TRUE;
-#endif
             default:
                 if (modify_key_feed(event, info, modify_table))
                     return TRUE;
@@ -2323,7 +2340,7 @@ int main(int argc, char **argv) {
 
     env = g_environ_setenv(env, "TERM", term, TRUE);
 #if EASY_MODE
-    sprintf(termite_uuid, "%d", easy_get_uuid());
+    sprintf(termite_uuid, "U%d", get_termite_uuid());
     env = g_environ_setenv(env, "TERMITE_UUID", termite_uuid, TRUE);
 #endif
 
