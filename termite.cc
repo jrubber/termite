@@ -2346,6 +2346,8 @@ int main(int argc, char **argv) {
 #if EASY_MODE
     sprintf(termite_uuid, "U%d", get_termite_uuid());
     env = g_environ_setenv(env, "TERMITE_UUID", termite_uuid, TRUE);
+
+    gtk_widget_set_size_request(window, 800, 600);
 #endif
 
     GPid child_pid;
