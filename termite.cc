@@ -506,6 +506,7 @@ static void update_selection(VteTerminal *vte, const select_info *select) {
 
 static int is_easy_selection_mode = 1;
 static char prev_title[1024];
+static int prev_title_set;
 #endif
 
 static void enter_command_mode(VteTerminal *vte, select_info *select) {
@@ -514,6 +515,7 @@ static void enter_command_mode(VteTerminal *vte, select_info *select) {
     is_easy_selection_mode = 1;
 
     prev_title[0] = NULL;
+    prev_title_set = 1;
     const char *const title = vte_terminal_get_window_title(vte);
     if (title != NULL) {
         strncpy(prev_title, title, sizeof(prev_title) - 1);
@@ -534,7 +536,7 @@ static void enter_command_mode(VteTerminal *vte, select_info *select) {
 
 static void exit_command_mode(VteTerminal *vte, select_info *select) {
 #if EASY_MODE
-    if (strlen(prev_title) > 0) {
+    if (prev_title_set) {
         gtk_window_set_title(GTK_WINDOW(gtk_widget_get_toplevel(GTK_WIDGET(vte))), prev_title);
         prev_title[0] = NULL;
     }
@@ -1533,6 +1535,7 @@ gboolean key_press_cb(VteTerminal *vte, GdkEventKey *event, keybind_info *info) 
                 return TRUE;
 #if EASY_MODE
             case GDK_KEY_j:
+            case GDK_KEY_k:
                 enter_command_mode(vte, &info->select);
                 return TRUE;
             case GDK_KEY_BackSpace:
@@ -2308,6 +2311,7 @@ int main(int argc, char **argv) {
 
 #if EASY_MODE
     prev_title[0] = NULL;
+    prev_title_set = 0;
 #endif
 
     if (icon) {
