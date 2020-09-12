@@ -2158,6 +2158,10 @@ int main(int argc, char **argv) {
     char *role = nullptr, *execute = nullptr, *config_file = nullptr;
     char *title = nullptr, *icon = nullptr;
     bool show_scrollbar = false;
+#if EASY_MODE
+//    char *geometry = nullptr;
+#endif
+
     const GOptionEntry entries[] = {
         {"version", 'v', 0, G_OPTION_ARG_NONE, &version, "Version info", nullptr},
         {"exec", 'e', 0, G_OPTION_ARG_STRING, &execute, "Command to execute", "COMMAND"},
@@ -2167,6 +2171,9 @@ int main(int argc, char **argv) {
         {"hold", 0, 0, G_OPTION_ARG_NONE, &hold, "Remain open after child process exits", nullptr},
         {"config", 'c', 0, G_OPTION_ARG_STRING, &config_file, "Path of config file", "CONFIG"},
         {"icon", 'i', 0, G_OPTION_ARG_STRING, &icon, "Icon", "ICON"},
+#if EASY_MODE
+//        {"geometry", 'g', 0, G_OPTION_ARG_STRING, &geometry, "Geometry", "Geometry"},
+#endif
         {nullptr, 0, 0, G_OPTION_ARG_NONE, nullptr, nullptr, nullptr}
     };
     g_option_context_add_main_entries(context, entries, nullptr);
@@ -2347,7 +2354,9 @@ int main(int argc, char **argv) {
     sprintf(termite_uuid, "U%d", get_termite_uuid());
     env = g_environ_setenv(env, "TERMITE_UUID", termite_uuid, TRUE);
 
-    gtk_widget_set_size_request(window, 800, 600);
+//    if (geometry) {
+//        gtk_widget_set_size_request(window, 800, 600);
+//    }
 #endif
 
     GPid child_pid;
