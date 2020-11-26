@@ -1039,7 +1039,7 @@ static void easy_move_heuristic(VteTerminal *vte, select_info *select) {
 }
 
 static void launch_gvim(char *filename) {
-    char *argv[4] = {"/usr/bin/gvim", "+normal G", filename, nullptr};
+    char *argv[4] = {"gvim", "+normal G", filename, nullptr};
     GError *error = nullptr;
 
     GPid child_pid;
