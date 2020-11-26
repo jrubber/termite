@@ -2150,7 +2150,11 @@ static void on_alpha_screen_changed(GtkWindow *window, GdkScreen *, void *) {
 
 int main(int argc, char **argv) {
     GError *error = nullptr;
+#if EASY_MODE
+    const char *const term = "xterm-256color";
+#else
     const char *const term = "xterm-termite";
+#endif
     char *directory = nullptr;
     gboolean version = FALSE, hold = FALSE;
 
