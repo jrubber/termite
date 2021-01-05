@@ -16,7 +16,8 @@
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
-#define EASY_MODE (1)
+#define TERMITE_NG (1)
+
 
 #include <algorithm>
 #include <array>
@@ -46,7 +47,7 @@
 #include "util/maybe.hh"
 #include "util/memory.hh"
 
-#if EASY_MODE
+#if TERMITE_NG
 #include <sys/stat.h>
 #include <sys/types.h>
 #endif
@@ -498,28 +499,29 @@ static void update_selection(VteTerminal *vte, const select_info *select) {
     vte_terminal_copy_primary(vte);
 }
 
-#if EASY_MODE
+#if TERMITE_NG
 //#define DEBUG (1)
 
 #define SELECTION_MODE_STR      ("[   SELECTION MODE   ]")
 #define EASY_SELECTION_MODE_STR ("[   EASY SELECTION MODE   ]")
 
-static int is_easy_selection_mode = 1;
-static char prev_title[1024];
-static int prev_title_set;
+static int ng_is_easy_selection_mode = 1;
+static char ng_prev_title[1024];
+static int ng_prev_title_set;
+static int ng_preferred_col = -1;
 #endif
 
 static void enter_command_mode(VteTerminal *vte, select_info *select) {
-#if EASY_MODE
+#if TERMITE_NG
     // Default is ON
-    is_easy_selection_mode = 1;
+    ng_is_easy_selection_mode = 1;
 
-    prev_title[0] = NULL;
-    prev_title_set = 1;
+    ng_prev_title[0] = NULL;
+    ng_prev_title_set = 1;
     const char *const title = vte_terminal_get_window_title(vte);
     if (title != NULL) {
-        strncpy(prev_title, title, sizeof(prev_title) - 1);
-        if (is_easy_selection_mode) {
+        strncpy(ng_prev_title, title, sizeof(ng_prev_title) - 1);
+        if (ng_is_easy_selection_mode) {
             gtk_window_set_title(GTK_WINDOW(gtk_widget_get_toplevel(GTK_WIDGET(vte))), EASY_SELECTION_MODE_STR);
         } else {
             gtk_window_set_title(GTK_WINDOW(gtk_widget_get_toplevel(GTK_WIDGET(vte))), SELECTION_MODE_STR);
@@ -535,15 +537,15 @@ static void enter_command_mode(VteTerminal *vte, select_info *select) {
 }
 
 static void exit_command_mode(VteTerminal *vte, select_info *select) {
-#if EASY_MODE
-    if (prev_title_set) {
-        gtk_window_set_title(GTK_WINDOW(gtk_widget_get_toplevel(GTK_WIDGET(vte))), prev_title);
-        prev_title[0] = NULL;
+#if TERMITE_NG
+    if (ng_prev_title_set) {
+        gtk_window_set_title(GTK_WINDOW(gtk_widget_get_toplevel(GTK_WIDGET(vte))), ng_prev_title);
+        ng_prev_title[0] = NULL;
     }
 #endif
 
     vte_terminal_set_cursor_position(vte, select->origin_col, select->origin_row);
-#if EASY_MODE
+#if TERMITE_NG
     update_scroll(vte);
 #endif
     vte_terminal_connect_pty_read(vte);
@@ -622,6 +624,32 @@ static void move(VteTerminal *vte, select_info *select, long col, long row) {
     vte_terminal_set_cursor_blink_mode(vte, mode);
 }
 
+#if TERMITE_NG
+static void ng_jump_to(VteTerminal *vte, select_info *select, long col, long row) {
+    const long end_col = vte_terminal_get_column_count(vte) - 1;
+
+    VteCursorBlinkMode mode = vte_terminal_get_cursor_blink_mode(vte);
+    vte_terminal_set_cursor_blink_mode(vte, VTE_CURSOR_BLINK_OFF);
+
+    vte_terminal_set_cursor_position(vte,
+                                     clamp(col, 0l, end_col),
+                                     clamp(row, first_row(vte), last_row(vte)));
+
+    update_scroll(vte);
+    update_selection(vte, select);
+    vte_terminal_set_cursor_blink_mode(vte, mode);
+}
+
+static void ng_update_preferred_col(VteTerminal *vte, long col) {
+    long cursor_row;
+    long cursor_col = col;
+    if (cursor_col == -1) {
+        vte_terminal_get_cursor_position(vte, &cursor_col, &cursor_row);
+    }
+    ng_preferred_col = cursor_col;
+}
+#endif
+
 static void move_to_row_start(VteTerminal *vte, select_info *select, long row) {
     vte_terminal_set_cursor_position(vte, 0, row);
     update_scroll(vte);
@@ -686,7 +714,7 @@ static void move_backward(VteTerminal *vte, select_info *select, F is_word) {
         } else {
             in_word = true;
         }
-#if EASY_MODE
+#if TERMITE_NG
         if (i == 1) {
             cursor_col--;
         }
@@ -699,9 +727,9 @@ static void move_backward(VteTerminal *vte, select_info *select, F is_word) {
     g_free(codepoints);
 }
 
-#if EASY_MODE
+#if TERMITE_NG
 
-static int is_space_char(char c) {
+static int ng_is_space_char(char c) {
     if (c == ' ' || c == '\t') {
         return 1;
     }
@@ -717,7 +745,7 @@ static int get_termite_uuid() {
     return rand();
 }
 
-static void easy_get_backward_token(VteTerminal *vte, select_info *select, long *start_idx, long *end_idx, int find_initial_delim) {
+static void ng_easy_get_backward_token(VteTerminal *vte, select_info *select, long *start_idx, long *end_idx, int find_initial_delim) {
     *start_idx = -1;
     *end_idx = -1;
 
@@ -735,7 +763,7 @@ static void easy_get_backward_token(VteTerminal *vte, select_info *select, long 
         return;
     }
 #if DEBUG
-    printf("easy_get_backward_token(): string length=%d\n", length);
+    printf("ng_easy_get_backward_token(): string length=%d\n", length);
 #endif
 
     long i;
@@ -744,7 +772,7 @@ static void easy_get_backward_token(VteTerminal *vte, select_info *select, long 
 #if DEBUG
             printf("  [%d] 0x%02x %c\n", i, codepoints[i], codepoints[i]);
 #endif
-            if (is_space_char(codepoints[i])) {
+            if (ng_is_space_char(codepoints[i])) {
                 break;
             }
         }
@@ -752,13 +780,13 @@ static void easy_get_backward_token(VteTerminal *vte, select_info *select, long 
         i = length - 2;
     }
 #if DEBUG
-    printf("easy_get_backward_token(): edge idx=%d\n", i);
+    printf("ng_easy_get_backward_token(): edge idx=%d\n", i);
 #endif
     for (; i >= 0; i--) {
 #if DEBUG
         printf("..[%d] 0x%02x %c\n", i, codepoints[i], codepoints[i]);
 #endif
-        if (is_space_char(codepoints[i])) {
+        if (ng_is_space_char(codepoints[i])) {
             if (*end_idx != -1) {
                 *start_idx = i + 1;
                 break;
@@ -775,24 +803,33 @@ static void easy_get_backward_token(VteTerminal *vte, select_info *select, long 
     g_free(codepoints);
 }
 
-static void easy_move_backward(VteTerminal *vte, select_info *select) {
+static void ng_easy_move_backward(VteTerminal *vte, select_info *select) {
     long cursor_col, cursor_row;
     vte_terminal_get_cursor_position(vte, &cursor_col, &cursor_row);
 
     long start_idx, end_idx;
-    easy_get_backward_token(vte, select, &start_idx, &end_idx, 1);
+    ng_easy_get_backward_token(vte, select, &start_idx, &end_idx, 1);
 #if DEBUG
-    printf("easy_move_backward() start_idx=%d, end_idx\n", (int) start_idx, (int) end_idx);
+    printf("ng_easy_move_backward() start_idx=%d, end_idx\n", (int) start_idx, (int) end_idx);
 #endif
     if (start_idx != -1) {
         cursor_col = start_idx;
     }
 
+    VteCursorBlinkMode mode = vte_terminal_get_cursor_blink_mode(vte);
+    vte_terminal_set_cursor_blink_mode(vte, VTE_CURSOR_BLINK_OFF);
+
     vte_terminal_set_cursor_position(vte, cursor_col, cursor_row);
     update_selection(vte, select);
+    vte_terminal_set_cursor_blink_mode(vte, mode);
+
+    ng_update_preferred_col(vte, cursor_col);
+#if DEBUG
+    printf("ng_easy_move_backward() ng_preferred_col=%d\n", ng_preferred_col);
+#endif
 }
 
-static void easy_get_current_token_end(VteTerminal *vte, select_info *select, long *end_idx) {
+static void ng_easy_get_current_token_end(VteTerminal *vte, select_info *select, long *end_idx) {
     *end_idx = -1;
 
     long cursor_col, cursor_row;
@@ -816,7 +853,7 @@ static void easy_get_current_token_end(VteTerminal *vte, select_info *select, lo
     }
 
 #if DEBUG
-    printf("easy_get_current_token_end(): string length=%d\n", length);
+    printf("ng_easy_get_current_token_end(): string length=%d\n", length);
 #endif
 
     if (length <= 0) {
@@ -831,7 +868,7 @@ static void easy_get_current_token_end(VteTerminal *vte, select_info *select, lo
     } 
 
 #if DEBUG
-    printf("easy_get_current_token_end(): match_char = '%c'\n", match_char);
+    printf("ng_easy_get_current_token_end(): match_char = '%c'\n", match_char);
 #endif
 
     long i = 0;
@@ -840,7 +877,7 @@ static void easy_get_current_token_end(VteTerminal *vte, select_info *select, lo
         printf("..[%d] 0x%02x %c\n", i, codepoints[i], codepoints[i]);
 #endif
         if (match_char == ' ') {
-            if (is_space_char(codepoints[i])) {
+            if (ng_is_space_char(codepoints[i])) {
                 *end_idx = i - 1;
                 break;
             }
@@ -859,33 +896,38 @@ static void easy_get_current_token_end(VteTerminal *vte, select_info *select, lo
     g_free(codepoints);
 }
 
-static long easy_move_token_end(VteTerminal *vte, select_info *select) {
+static long ng_easy_move_token_end(VteTerminal *vte, select_info *select) {
     long cursor_col, cursor_row;
     vte_terminal_get_cursor_position(vte, &cursor_col, &cursor_row);
 
     long end_idx;
-    easy_get_current_token_end(vte, select, &end_idx);
+    ng_easy_get_current_token_end(vte, select, &end_idx);
 #if DEBUG
-    printf("easy_move_token_end() end_idx\n", (int) end_idx);
+    printf("ng_easy_move_token_end() end_idx\n", (int) end_idx);
 #endif
     if (end_idx != -1) {
         cursor_col += end_idx;
     }
 
+    VteCursorBlinkMode mode = vte_terminal_get_cursor_blink_mode(vte);
+    vte_terminal_set_cursor_blink_mode(vte, VTE_CURSOR_BLINK_OFF);
+
     vte_terminal_set_cursor_position(vte, cursor_col, cursor_row);
     update_selection(vte, select);
+    vte_terminal_set_cursor_blink_mode(vte, mode);
 
     return end_idx;
 }
 
 
-static void easy_get_current_token_start(VteTerminal *vte, select_info *select, long *start_idx) {
+static void ng_easy_get_current_token_start(VteTerminal *vte, select_info *select, long *start_idx) {
     *start_idx = -1;
 
     long cursor_col, cursor_row;
     vte_terminal_get_cursor_position(vte, &cursor_col, &cursor_row);
+    const long end_col = vte_terminal_get_column_count(vte) - 1;
 
-    auto content = get_text_range(vte, cursor_row, 0, cursor_row, cursor_col);
+    auto content = get_text_range(vte, cursor_row, 0, cursor_row, std::min(cursor_col + 1, end_col));
     if (!content) {
         return;
     }
@@ -896,14 +938,15 @@ static void easy_get_current_token_start(VteTerminal *vte, select_info *select, 
         return;
     }
 #if DEBUG
-    printf("easy_get_current_token_start(): string length=%d\n", length);
+    printf("ng_easy_get_current_token_start(): string length=%d cursor_col=%d\n", length, cursor_col);
 #endif
 
     if (length < cursor_col) {
         g_free(codepoints);
         return;
     }
-    if (is_space_char(codepoints[length - 2])) {
+
+    if (ng_is_space_char(codepoints[length - 2])) {
         g_free(codepoints);
         return;
     }
@@ -912,7 +955,7 @@ static void easy_get_current_token_start(VteTerminal *vte, select_info *select, 
 #if DEBUG
         printf("..[%d] 0x%02x %c\n", i, codepoints[i], codepoints[i]);
 #endif
-        if (is_space_char(codepoints[i])) {
+        if (ng_is_space_char(codepoints[i])) {
             *start_idx = i + 1;
             break;
         }
@@ -925,7 +968,7 @@ static void easy_get_current_token_start(VteTerminal *vte, select_info *select, 
     g_free(codepoints);
 }
 
-static void easy_get_forward_token(VteTerminal *vte, select_info *select, long *start_idx, long *end_idx, int find_initial_delim) {
+static void ng_easy_get_forward_token(VteTerminal *vte, select_info *select, long *start_idx, long *end_idx, int find_initial_delim) {
     *start_idx = -1;
     *end_idx = -1;
 
@@ -950,25 +993,25 @@ static void easy_get_forward_token(VteTerminal *vte, select_info *select, long *
     }
 
 #if DEBUG
-    printf("easy_get_forward_token(): string length=%d\n", length);
+    printf("ng_easy_get_forward_token(): string length=%d\n", length);
 #endif
 
     long i = 0;
     if (find_initial_delim) {
         for (i = 0; i < length; i++) {
-            if (is_space_char(codepoints[i])) {
+            if (ng_is_space_char(codepoints[i])) {
                 break;
             }
         }
     }
 #if DEBUG
-    printf("easy_get_forward_token(): edge idx=%d\n", i);
+    printf("ng_easy_get_forward_token(): edge idx=%d\n", i);
 #endif
     for (; i < length; i++) {
 #if DEBUG
         printf("..[%d] 0x%02x %c\n", i, codepoints[i], codepoints[i]);
 #endif
-        if (is_space_char(codepoints[i])) {
+        if (ng_is_space_char(codepoints[i])) {
             if (*start_idx != -1) {
                 *end_idx = i;
                 break;
@@ -983,45 +1026,55 @@ static void easy_get_forward_token(VteTerminal *vte, select_info *select, long *
     g_free(codepoints);
 }
 
-static void easy_move_forward(VteTerminal *vte, select_info *select) {
+static void ng_easy_move_forward(VteTerminal *vte, select_info *select) {
     long cursor_col, cursor_row;
     vte_terminal_get_cursor_position(vte, &cursor_col, &cursor_row);
 
     long start_idx, end_idx;
-    easy_get_forward_token(vte, select, &start_idx, &end_idx, 1);
+    ng_easy_get_forward_token(vte, select, &start_idx, &end_idx, 1);
 #if DEBUG
-    printf("easy_move_forward() start_idx=%d, end_idx\n", (int) start_idx, (int) end_idx);
+    printf("ng_easy_move_forward() start_idx=%d, end_idx\n", (int) start_idx, (int) end_idx);
 #endif
     if (start_idx != -1) {
         cursor_col += start_idx;
     }
 
+    VteCursorBlinkMode mode = vte_terminal_get_cursor_blink_mode(vte);
+    vte_terminal_set_cursor_blink_mode(vte, VTE_CURSOR_BLINK_OFF);
+
     vte_terminal_set_cursor_position(vte, cursor_col, cursor_row);
     update_selection(vte, select);
+    vte_terminal_set_cursor_blink_mode(vte, mode);
+
+    ng_update_preferred_col(vte, cursor_col);
+#if DEBUG
+    printf("ng_easy_move_forward() ng_preferred_col=%d\n", ng_preferred_col);
+#endif
 }
 
-static void easy_move_heuristic(VteTerminal *vte, select_info *select) {
+static void ng_easy_move_heuristic(VteTerminal *vte, select_info *select) {
     long cursor_col, cursor_row;
     vte_terminal_get_cursor_position(vte, &cursor_col, &cursor_row);
 
     long start_idx, end_idx;
-    easy_get_current_token_start(vte, select, &start_idx);
+    ng_easy_get_current_token_start(vte, select, &start_idx);
 #if DEBUG
-    printf("easy_move_heuristic() current start_idx=%d, end_idx\n", (int) start_idx, (int) end_idx);
+    printf("ng_easy_move_heuristic() current start_idx=%d\n", (int) start_idx);
 #endif
     if (start_idx != -1) {
         cursor_col = start_idx;
     } else {
-        easy_get_forward_token(vte, select, &start_idx, &end_idx, 0);
+        ng_easy_get_forward_token(vte, select, &start_idx, &end_idx, 0);
 #if DEBUG
-        printf("easy_move_heuristic() forward start_idx=%d, end_idx\n", (int) start_idx, (int) end_idx);
+        printf("ng_easy_move_heuristic() forward start_idx=%d, end_idx\n", (int) start_idx, (int) end_idx);
 #endif
+
         if (start_idx != -1) {
             cursor_col += start_idx;
         } else {
-            easy_get_backward_token(vte, select, &start_idx, &end_idx, 0);
+            ng_easy_get_backward_token(vte, select, &start_idx, &end_idx, 0);
 #if DEBUG
-            printf("easy_move_heuristic() backward start_idx=%d, end_idx\n", (int) start_idx, (int) end_idx);
+            printf("ng_easy_move_heuristic() backward start_idx=%d, end_idx\n", (int) start_idx, (int) end_idx);
 #endif
             if (start_idx != -1) {
                 cursor_col = start_idx;
@@ -1031,11 +1084,14 @@ static void easy_move_heuristic(VteTerminal *vte, select_info *select) {
         }
     }
 #if DEBUG
-    printf("easy_move_heuristic() final cursor_col\n", (int) cursor_col);
+    printf("ng_easy_move_heuristic() final cursor_col\n", (int) cursor_col);
 #endif
+    VteCursorBlinkMode mode = vte_terminal_get_cursor_blink_mode(vte);
+    vte_terminal_set_cursor_blink_mode(vte, VTE_CURSOR_BLINK_OFF);
 
     vte_terminal_set_cursor_position(vte, cursor_col, cursor_row);
     update_selection(vte, select);
+    vte_terminal_set_cursor_blink_mode(vte, mode);
 }
 
 static void launch_gvim(char *filename) {
@@ -1298,7 +1354,7 @@ gboolean key_press_cb(VteTerminal *vte, GdkEventKey *event, keybind_info *info) 
                     return TRUE;
             }
         }
-#if EASY_MODE
+#if TERMITE_NG
         if (modifiers == (GDK_CONTROL_MASK|GDK_SHIFT_MASK)) {
             switch (event->keyval) {
                 case GDK_KEY_BackSpace:
@@ -1317,61 +1373,96 @@ gboolean key_press_cb(VteTerminal *vte, GdkEventKey *event, keybind_info *info) 
                 break;
             case GDK_KEY_Left:
             case GDK_KEY_h:
-#if EASY_MODE
-                if (is_easy_selection_mode) {
-                    easy_move_backward(vte, &info->select);
+#if TERMITE_NG
+                if (ng_is_easy_selection_mode) {
+                    ng_easy_move_backward(vte, &info->select);
                 } else
 #endif
                 move(vte, &info->select, -1, 0);
                 break;
             case GDK_KEY_Down:
             case GDK_KEY_j:
-                move(vte, &info->select, 0, 1);
-#if EASY_MODE
-                if (is_easy_selection_mode) {
-                    easy_move_heuristic(vte, &info->select);
-                }
+#if TERMITE_NG
+                if (ng_is_easy_selection_mode) {
+                    long cursor_col, cursor_row;
+                    vte_terminal_get_cursor_position(vte, &cursor_col, &cursor_row);
+                    if (ng_preferred_col != -1) {
+                        ng_jump_to(vte, &info->select, ng_preferred_col, cursor_row + 1);
+                    } else {
+                        ng_jump_to(vte, &info->select, cursor_col, cursor_row + 1);
+                    }
+                    ng_easy_move_heuristic(vte, &info->select);
+                } else
 #endif
+                move(vte, &info->select, 0, 1);
                 break;
             case GDK_KEY_Up:
             case GDK_KEY_k:
-                move(vte, &info->select, 0, -1);
-#if EASY_MODE
-                if (is_easy_selection_mode) {
-                    easy_move_heuristic(vte, &info->select);
-                }
+#if TERMITE_NG
+                if (ng_is_easy_selection_mode) {
+                    long cursor_col, cursor_row;
+                    vte_terminal_get_cursor_position(vte, &cursor_col, &cursor_row);
+                    if (ng_preferred_col != -1) {
+                        ng_jump_to(vte, &info->select, ng_preferred_col, cursor_row - 1);
+                    } else {
+                        ng_jump_to(vte, &info->select, cursor_col, cursor_row - 1);
+                    }
+                    ng_easy_move_heuristic(vte, &info->select);
+                } else
 #endif
+                move(vte, &info->select, 0, -1);
                 break;
             case GDK_KEY_Right:
             case GDK_KEY_l:
-#if EASY_MODE
-                if (is_easy_selection_mode) {
-                    easy_move_forward(vte, &info->select);
+#if TERMITE_NG
+                if (ng_is_easy_selection_mode) {
+                    ng_easy_move_forward(vte, &info->select);
                 } else
 #endif
                 move(vte, &info->select, 1, 0);
                 break;
             case GDK_KEY_b:
+#if TERMITE_NG
+                if (ng_is_easy_selection_mode) break;
+#endif
                 move_backward_word(vte, &info->select);
                 break;
             case GDK_KEY_B:
+#if TERMITE_NG
+                if (ng_is_easy_selection_mode) break;
+#endif
                 move_backward_blank_word(vte, &info->select);
                 break;
             case GDK_KEY_w:
+#if TERMITE_NG
+                if (ng_is_easy_selection_mode) break;
+#endif
                 move_forward_word(vte, &info->select);
                 break;
             case GDK_KEY_W:
+#if TERMITE_NG
+                if (ng_is_easy_selection_mode) break;
+#endif
                 move_forward_blank_word(vte, &info->select);
                 break;
             case GDK_KEY_e:
                 move_forward_end_word(vte, &info->select);
                 break;
             case GDK_KEY_E:
+#if TERMITE_NG
+                if (ng_is_easy_selection_mode) break;
+#endif
                 move_forward_end_blank_word(vte, &info->select);
                 break;
             case GDK_KEY_0:
             case GDK_KEY_Home:
                 set_cursor_column(vte, &info->select, 0);
+#if TERMITE_NG
+                if (ng_is_easy_selection_mode) {
+                    ng_easy_move_heuristic(vte, &info->select);
+                    ng_update_preferred_col(vte, -1);
+                }
+#endif
                 break;
             case GDK_KEY_asciicircum:
                 set_cursor_column(vte, &info->select, 0);
@@ -1380,6 +1471,12 @@ gboolean key_press_cb(VteTerminal *vte, GdkEventKey *event, keybind_info *info) 
             case GDK_KEY_dollar:
             case GDK_KEY_End:
                 move_to_eol(vte, &info->select);
+#if TERMITE_NG
+                if (ng_is_easy_selection_mode) {
+                    ng_easy_move_heuristic(vte, &info->select);
+                    ng_update_preferred_col(vte, -1);
+                }
+#endif
                 break;
             case GDK_KEY_g:
                 move_to_row_start(vte, &info->select, first_row(vte));
@@ -1403,13 +1500,13 @@ gboolean key_press_cb(VteTerminal *vte, GdkEventKey *event, keybind_info *info) 
                 toggle_visual(vte, &info->select, vi_mode::visual_line);
                 break;
             case GDK_KEY_y:
-#if EASY_MODE
-                if (is_easy_selection_mode) {
+#if TERMITE_NG
+                if (ng_is_easy_selection_mode) {
                     if (info->select.mode != vi_mode::visual && 
                             info->select.mode != vi_mode::visual_line &&
                             info->select.mode != vi_mode::visual_block) {
                         toggle_visual(vte, &info->select, vi_mode::visual);
-                        easy_move_token_end(vte, &info->select);
+                        ng_easy_move_token_end(vte, &info->select);
                     }
                 }
 #endif
@@ -1418,8 +1515,8 @@ gboolean key_press_cb(VteTerminal *vte, GdkEventKey *event, keybind_info *info) 
 #else
                 vte_terminal_copy_clipboard(vte);
 #endif
-#if EASY_MODE
-                if (is_easy_selection_mode) {
+#if TERMITE_NG
+                if (ng_is_easy_selection_mode) {
                     exit_command_mode(vte, &info->select);
                     gtk_widget_hide(info->panel.da);
                     gtk_widget_hide(info->panel.entry);
@@ -1451,13 +1548,13 @@ gboolean key_press_cb(VteTerminal *vte, GdkEventKey *event, keybind_info *info) 
                 open_selection(info->config.browser, vte);
                 break;
             case GDK_KEY_Return:
-#if EASY_MODE
-                if (is_easy_selection_mode) {
+#if TERMITE_NG
+                if (ng_is_easy_selection_mode) {
                     if (info->select.mode != vi_mode::visual && 
                             info->select.mode != vi_mode::visual_line &&
                             info->select.mode != vi_mode::visual_block) {
                         toggle_visual(vte, &info->select, vi_mode::visual);
-                        easy_move_token_end(vte, &info->select);
+                        ng_easy_move_token_end(vte, &info->select);
                     }
 #if VTE_CHECK_VERSION(0, 50, 0)
                     vte_terminal_copy_clipboard_format(vte, VTE_FORMAT_TEXT);
@@ -1481,13 +1578,13 @@ gboolean key_press_cb(VteTerminal *vte, GdkEventKey *event, keybind_info *info) 
                 gtk_widget_show(info->panel.da);
                 overlay_show(&info->panel, overlay_mode::urlselect, nullptr);
                 break;
-#if EASY_MODE
+#if TERMITE_NG
             case GDK_KEY_space:
-                if (is_easy_selection_mode) {
-                    is_easy_selection_mode = 0;
+                if (ng_is_easy_selection_mode) {
+                    ng_is_easy_selection_mode = 0;
                     gtk_window_set_title(GTK_WINDOW(gtk_widget_get_toplevel(GTK_WIDGET(vte))), SELECTION_MODE_STR);
                 } else {
-                    is_easy_selection_mode = 1;
+                    ng_is_easy_selection_mode = 1;
                     gtk_window_set_title(GTK_WINDOW(gtk_widget_get_toplevel(GTK_WIDGET(vte))), EASY_SELECTION_MODE_STR);
                 }
                 break;
@@ -1533,7 +1630,7 @@ gboolean key_press_cb(VteTerminal *vte, GdkEventKey *event, keybind_info *info) 
             case GDK_KEY_l:
                 vte_terminal_reset(vte, TRUE, TRUE);
                 return TRUE;
-#if EASY_MODE
+#if TERMITE_NG
             case GDK_KEY_j:
             case GDK_KEY_k:
                 enter_command_mode(vte, &info->select);
@@ -2150,7 +2247,7 @@ static void on_alpha_screen_changed(GtkWindow *window, GdkScreen *, void *) {
 
 int main(int argc, char **argv) {
     GError *error = nullptr;
-#if EASY_MODE
+#if TERMITE_NG
     const char *const term = "xterm-256color";
 #else
     const char *const term = "xterm-termite";
@@ -2162,7 +2259,7 @@ int main(int argc, char **argv) {
     char *role = nullptr, *execute = nullptr, *config_file = nullptr;
     char *title = nullptr, *icon = nullptr;
     bool show_scrollbar = false;
-#if EASY_MODE
+#if TERMITE_NG
 //    char *geometry = nullptr;
 #endif
 
@@ -2175,7 +2272,7 @@ int main(int argc, char **argv) {
         {"hold", 0, 0, G_OPTION_ARG_NONE, &hold, "Remain open after child process exits", nullptr},
         {"config", 'c', 0, G_OPTION_ARG_STRING, &config_file, "Path of config file", "CONFIG"},
         {"icon", 'i', 0, G_OPTION_ARG_STRING, &icon, "Icon", "ICON"},
-#if EASY_MODE
+#if TERMITE_NG
 //        {"geometry", 'g', 0, G_OPTION_ARG_STRING, &geometry, "Geometry", "Geometry"},
 #endif
         {nullptr, 0, 0, G_OPTION_ARG_NONE, nullptr, nullptr, nullptr}
@@ -2320,9 +2417,9 @@ int main(int argc, char **argv) {
         }
     }
 
-#if EASY_MODE
-    prev_title[0] = NULL;
-    prev_title_set = 0;
+#if TERMITE_NG
+    ng_prev_title[0] = NULL;
+    ng_prev_title_set = 0;
 #endif
 
     if (icon) {
@@ -2354,13 +2451,9 @@ int main(int argc, char **argv) {
 #endif
 
     env = g_environ_setenv(env, "TERM", term, TRUE);
-#if EASY_MODE
+#if TERMITE_NG
     sprintf(termite_uuid, "U%d", get_termite_uuid());
     env = g_environ_setenv(env, "TERMITE_UUID", termite_uuid, TRUE);
-
-//    if (geometry) {
-//        gtk_widget_set_size_request(window, 800, 600);
-//    }
 #endif
 
     GPid child_pid;
